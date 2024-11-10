@@ -1,0 +1,58 @@
+name: Build OpenWrt
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up OpenWrt build environment
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential libncurses5-dev gawk git gettext libssl-dev python3-distutils zlib1g-dev file wget
+
+    - name: Clone OpenWrt source code
+      run: |
+        git clone https://git.openwrt.org/openwrt/openwrt.git
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Add luci-app-xray feed
+      run: |
+        echo "src-git luci_app_xray https://github.com/yichya/luci-app-xray" >> feeds.conf.default
+        ./scripts/feeds update luci_app_xray
+        ./scripts/feeds install -a
+
+    - name: Clone luci-app-xray package
+      run: |
+        cd package
+        git clone https://github.com/yichya/luci-app-xray
+        cd ..
+
+    - name: Configure build
+      run: |
+        cp ./openwrt/feeds/luci_app_xray/configs/xray.config .config
+        make defconfig
+
+    - name: Build OpenWrt
+      run: |
+        make menuconfig
+        make -j$(nproc) V=s
+
+    - name: Upload firmware to GitHub releases
+      uses: actions/upload-artifact@v3
+      with:
+        name: openwrt-firmware
+        path: openwrt/bin/targets/*/*.bin
